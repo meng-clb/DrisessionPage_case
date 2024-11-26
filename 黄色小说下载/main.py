@@ -6,10 +6,7 @@ tab = page.new_tab()
 print('等待页面加载完成.....')
 page.get('https://www.uaa001.com/')
 # print('请你登录账号, 登录完成之后输入"1"继续进行操作')
-# TODO
-# book_url = input('请你登录账号, 登录完成之后输入你要下载的书本链接: \n')
-book_url = 'https://www.uaa004.com/novel/intro?id=1018238760996966400'  # 测试
-book_url = 'https://www.uaa004.com/novel/intro?id=1045522162842210304'  # 测试
+book_url = input('请你登录账号, 登录完成之后输入你要下载的书本链接: \n')
 print('开始解析书本链接.....')
 # 通过书本的详情页链接, 获取书本的目录信息
 page.get(book_url)
@@ -27,12 +24,11 @@ a_list = page.eles('xpath://ul[@class="catalog_ul"]//li[@class="child " or @clas
                    'hide"]/a') or \
          page.eles('xpath://ul[@class="catalog_ul"]//li[@class="menu " or @class="menu hide"]/a')
 
-a_list = page.eles('xpath://ul[@class="catalog_ul"]//li[@class="menu " or @class="menu hide" '
-                   'or class="child "]')
-print(a_list)
+
+# print(a_list)
 # print(len(a_list))
 print(f'共获取到{len(a_list)}章节目录')
-time.sleep(10000)
+# time.sleep(10000)
 
 with open(book_name + '.txt', 'w', encoding='utf-8') as f:
 	for a in a_list:

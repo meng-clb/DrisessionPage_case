@@ -1,6 +1,7 @@
 import os
 import time
 from DrissionPage import ChromiumPage
+from DrissionPage.errors import ElementNotFoundError
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import requests
@@ -151,7 +152,7 @@ def get_chapter_contents(book_contents, page):
 	"""
 	chapter_contents = []
 	for content_url in book_contents:
-		print(f"开始获取 {content_url} 目录详情")
+		# print(f"开始获取 {content_url} 目录详情")
 		page.get(content_url)
 		wait_for_page_load(page)
 
@@ -218,10 +219,52 @@ def save_chapter_to_file(book_name, chapter_url, chapter_content):
 		with open(file_name, "a", encoding="utf-8") as file:
 			# file.write(f"章节链接: {chapter_url}\n")
 			file.write(f"{chapter_content}\n")
-			file.write("=" * 50 + "\n")  # 分隔符
-		print(f"章节已保存到 {file_name}")
+		# print(f"章节已保存到 {file_name}")
 	except Exception as e:
 		print(f"保存章节内容失败: {e}")
+
+
+def save_progress(chapter_url):
+	"""
+	保存当前进度到文件。
+
+	:param chapter_url: 当前下载的章节链接
+	"""
+	with open('progress.txt', 'w') as f:
+		f.write(chapter_url)
+
+
+def load_progress():
+	"""
+	加载上次保存的进度。
+
+	:return: 上次断开的章节链接，如果没有保存进度则返回 None
+	"""
+	if os.path.exists('progress.txt'):
+		with open('progress.txt', 'r') as f:
+			return f.read().strip()
+	return None
+
+
+def safe_get_element(tab, locator, retries=3, wait_time=2):
+	"""
+	安全地获取页面元素，避免因元素不存在而导致程序崩溃。
+
+	:param tab: 页面对象
+	:param locator: 元素定位器
+	:param retries: 最大重试次数
+	:param wait_time: 每次重试等待的时间
+	:return: 元素对象，如果找不到则返回 None
+	"""
+	for attempt in range(retries):
+		try:
+			element = tab.ele(locator)
+			return element
+		except ElementNotFoundError:
+			print(f"尝试 {attempt + 1}/{retries} 获取元素失败，等待 {wait_time} 秒后重试...")
+			time.sleep(wait_time)
+	print("多次尝试获取元素失败")
+	return None
 
 
 def process_chapters(chapter_contents, tab, book_name):
@@ -231,18 +274,36 @@ def process_chapters(chapter_contents, tab, book_name):
 	:param chapter_contents: 章节链接列表
 	:param tab: 页面控制对象
 	"""
-	for chapter_url in chapter_contents:
+
+	# 读取上次的进度
+	last_chapter = load_progress()
+
+	start_index = 0
+	if last_chapter:
+		# 从保存的章节链接开始
+		if last_chapter in chapter_contents:
+			start_index = chapter_contents.index(last_chapter) + 1  # 从下一个章节开始
+
+	for chapter_url in chapter_contents[start_index:]:
 		tab.get(chapter_url)
 		wait_for_page_load(tab)
-		if '真人' in tab.ele('tag:p').text:
+
+		# 使用安全方法来获取页面元素
+		p_element = safe_get_element(tab, 'tag:p')
+
+		if p_element and '真人' in p_element.text:
 			print('手动通过真人验证')
 			input('按任意键继续...')
 
+		title = tab.ele('tag:h1').text
+		print(f'开始获取{title}的内容.')
 		while True:
 			try:
 				content = get_img_content(tab)
 				save_chapter_to_file(book_name, chapter_url, content)
-				print("章节内容：\n", content)
+				# print("章节内容：\n", content)
+
+
 				time.sleep(3)
 
 				center = tab.ele('xpath://center[@class="chapterPages"]')
@@ -254,19 +315,22 @@ def process_chapters(chapter_contents, tab, book_name):
 					next_page = page_links[current_index + 1]
 					next_page_href = next_page.attrs.get('href', '')
 					if next_page_href:
-						print(f"准备点击下一页: {next_page_href}")
+						# print(f"准备点击下一页: {next_page_href}")
 						next_page.click()
 						wait_for_page_load(tab)
 					else:
-						print("下一页链接未找到")
+						print("下一页链接未找到, 程序继续运行则不用管")
 						break
 				else:
-					print("已到最后一页")
+					# print("已到最后一页")
 					break
 
 			except Exception as e:
 				print(f"发生错误: {e}")
 				break
+		print('章节内容已保存.')
+		# 保存当前章节链接为进度
+		save_progress(chapter_url)
 
 
 def main():
@@ -276,13 +340,20 @@ def main():
 	page = ChromiumPage()
 	tab = page.new_tab()
 
-	book_url = 'https://www.banzhu11111.com/35/35780/'
+	book_url = input('请你输入要下载的书本链接.')
+	# book_url = 'https://www.banzhu11111.com/35/35780/'
+	# book_url = 'https://www.banzhu999999.com/44/44691/'
+	print('开始解析链接....')
 	page.get(book_url)
 	wait_for_page_load(page)
 
-	if '真人' in page.ele('tag:p').text:
+	# 使用安全方法来获取页面元素
+	p_element = safe_get_element(tab, 'tag:p')
+
+	if p_element and '真人' in p_element.text:
 		print('手动通过真人验证')
 		input('按任意键继续...')
+
 
 	book_name = get_book_name(page)
 	print(f"书名: {book_name}")
@@ -291,10 +362,12 @@ def main():
 	print(f"最后一页: {end_page}")
 
 	book_contents = generate_links(book_url, int(end_page))
-	print(f"目录页链接: {book_contents}")
+	# print(f"目录页链接: {book_contents}")
+	print('目录页链接获取完成.')
 
 	chapter_contents = get_chapter_contents(book_contents, page)
-	print(f"章节链接: {chapter_contents}")
+	# print(f"章节链接: {chapter_contents}")
+	print('章节链接获取完成.')
 
 	process_chapters(chapter_contents, tab, book_name)
 
